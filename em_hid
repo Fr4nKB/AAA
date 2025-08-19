@@ -31,4 +31,4 @@ ln -s ./functions/hid.usb0 configs/c.1/
 
 sleep 1
 
-cat 20980000.usb > /sys/kernel/config/usb_gadget/hid/UDC
+ls 20980000.usb > /sys/kernel/config/usb_gadget/hid/UDC
