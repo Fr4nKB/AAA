@@ -1,3 +1,3 @@
-yolov8n.pt
+yolo*.pt
 output.png
 .vscode/

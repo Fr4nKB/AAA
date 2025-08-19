@@ -6,14 +6,17 @@ import struct
 from threading import Thread
 from queue import Queue, Full
 
+ip = "192.168.50.10"
+port = 42069
+
 def write_report(report):
     with open('/dev/hidg0', 'wb+') as fd:
         fd.write(report)
 
 def raw_move(x_pixels, y_pixels):
-    # 0.31 is my sensitivity in game
-    x_units = int(x_pixels * 1/0.31)
-    y_units = int(y_pixels * 1/0.31)
+    # 0.35 is my sensitivity in game
+    x_units = int(x_pixels * 1/0.35)
+    y_units = int(y_pixels * 1/0.35)
     report = bytearray([0, x_units & 0xFF, (x_units >> 8) & 0xFF, y_units & 0xFF, (y_units >> 8) & 0xFF])
     write_report(report)
 
@@ -35,23 +38,20 @@ def move_mouse(x_offset, y_offset):
 
     # Calculate the total distance to travel
     total_distance = sqrt(x_offset**2 + y_offset**2)
-    if(total_distance <= 30):
+    if(total_distance <= 5):    # avoid moving if already close enough
         return 1
 
-    # Calculate the step size based on the total distance
-    step_size = int(total_distance / 20)
-    step_size_max = max(2, step_size)
-
     # Move the mouse along the Bezier curve
-    for t in range(0, 101, step_size):
-        if t < 2 or t > 98:     # ease in and out
-            step_size = 1
+    t = 1.0
+    while(t <= 30.0):
+        if t <= 5.0 or t >= 25.0:     # ease in and out
+            step_size = 0.5
         else:
-            step_size = step_size_max
+            step_size = 1.0
         
         # get current position on the curve
-        x = int(bezier(float(t)/100, control_points[0][0], control_points[1][0], control_points[2][0], control_points[3][0]))
-        y = int(bezier(float(t)/100, control_points[0][1], control_points[1][1], control_points[2][1], control_points[3][1]))
+        x = int(bezier(t/30, control_points[0][0], control_points[1][0], control_points[2][0], control_points[3][0]))
+        y = int(bezier(t/30, control_points[0][1], control_points[1][1], control_points[2][1], control_points[3][1]))
 
         # Calculate the difference from the previous position
         dx = x - prev_x
@@ -61,13 +61,16 @@ def move_mouse(x_offset, y_offset):
 
         # Move the mouse by the difference
         raw_move(dx, dy)
+        t += step_size
 
     return 0
 
 def listen():
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.bind(("192.168.50.10", 42069))
+    sock.bind((ip, port))
     sock.listen(1)
+    print("Listening on " + ip + ":" + str(port))
+
     while True:
         client_socket, client_address = sock.accept()
         print("Accepted connection from:", client_address)
@@ -99,8 +102,8 @@ try:
             ret = move_mouse(offsets[0], offsets[1])
 
             # comment this if you don't want to fire automatically
-            if ret == 1:
-                time.sleep(0.05)
-                perform_lmb_click()
+            # if ret == 1:
+            #     time.sleep(0.05)
+            #     perform_lmb_click()
 except KeyboardInterrupt:
     print("Program exited.")
