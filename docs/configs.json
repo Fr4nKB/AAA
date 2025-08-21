@@ -1,0 +1,29 @@
+{
+  "Default": {
+    "aimbot_fov_percentage": 0.12,
+    "dead_zone_radius": 8,
+    "trigger_bot": true,
+    "classes": [
+      1,
+      3
+    ]
+  },
+  "Closet": {
+    "aimbot_fov_percentage": 0.16,
+    "dead_zone_radius": 10,
+    "trigger_bot": false,
+    "classes": [
+      0,
+      2
+    ]
+  },
+  "Aggressive": {
+    "aimbot_fov_percentage": 1.0,
+    "dead_zone_radius": 6,
+    "trigger_bot": true,
+    "classes": [
+      1,
+      3
+    ]
+  }
+}
