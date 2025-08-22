@@ -20,6 +20,27 @@ setting_font = ("Verdana", 9)
 settings_img = Image.open("docs/settings_example.png")
 
 
+def autosave(*args):
+    # sync variables into settings/configs
+    for (section, key), var in variables.items():
+        if isinstance(var, list):  # list of IntVar for checkbuttons
+            configs[section][key] = [
+                i for i, v in enumerate(var) if v.get() == 1
+            ]
+        else:
+            if section == "Settings":
+                settings[key] = var.get()
+            else:
+                configs[section][key] = var.get()
+
+    jh.saveJSON("settings", settings)
+    jh.saveJSON("configs", configs)
+
+
+def bind_autosave(var):
+    var.trace_add("write", autosave)
+
+
 def crop_settings_img(size):
     width, height = settings_img.size
 
@@ -44,55 +65,37 @@ def draw_circle(img, radius, color="red", thickness=3):
 def get_settings_img(config):
     _, height = settings_img.size
     crop_size = int(height * settings["aimbot_box_size_percentage"])
+    half_crop_size = crop_size / 2
+
     img = crop_settings_img(crop_size)
 
-    radius = config["aimbot_fov_percentage"]/2 * crop_size
+    radius = config["aimbot_fov"] * half_crop_size
     img = draw_circle(img, radius)
 
-    dead_zone_radius = config["dead_zone_radius"]
+    dead_zone_radius = config["dead_zone"] * half_crop_size
     img = draw_circle(img, dead_zone_radius, color="black")
 
     return img
 
 
-def autosave(*args):
-    # sync variables into settings/configs
-    for (section, key), var in variables.items():
-        if isinstance(var, list):  # list of IntVar for checkbuttons
-            configs[section][key] = [
-                i for i, v in enumerate(var) if v.get() == 1
-            ]
-        else:
-            if section == "Settings":
-                settings[key] = var.get()
-            else:
-                configs[section][key] = var.get()
+def update_preview():
+    global settings_img_label
 
-    jh.saveJSON("settings", settings)
-    jh.saveJSON("configs", configs)
+    img = get_settings_img(configs[settings["current_config"]])
+    tk_img = ImageTk.PhotoImage(img.resize((400, 400), Image.LANCZOS))
+
+    settings_img_label.configure(image=tk_img)
+    settings_img_label.image = tk_img
 
 
-def bind_autosave(var):
-    var.trace_add("write", autosave)
-
-
-def add_scale_control(frame, title, key, value, var_type, from_, to, resolution):
+def add_scale_control(frame, row, title, key, value, var_type, from_, to, resolution, callback=None):
     var = var_type(value=value)
     bind_autosave(var)
     variables[(title, key)] = var
 
-    def on_scale_change(val):
-        global settings_img_label
-
-        configs[title][key] = var.get()
-
-        img = get_settings_img(configs[title])
-        tk_img = ImageTk.PhotoImage(img.resize((400, 400), Image.LANCZOS))
-        settings_img_label.configure(image=tk_img)
-        settings_img_label.image = tk_img
-
     inner = ttk.Frame(frame)
-    inner.pack(fill="x", padx=5)
+    inner.grid(row=row, column=1, sticky="ew", pady=5)
+    inner.columnconfigure(0, weight=1)
 
     scale = tk.Scale(
         inner,
@@ -102,7 +105,7 @@ def add_scale_control(frame, title, key, value, var_type, from_, to, resolution)
         resolution=resolution,
         variable=var,
         showvalue=False,
-        command=on_scale_change
+        command=callback
     )
     scale.grid(row=0, column=0, sticky="ew")
 
@@ -142,34 +145,40 @@ def build_config_frame(parent, title):
     parent["text"] = f"Current Config: {title}".upper()
     config = configs[title]
 
+    # Main two-column layout: settings_frame | image_frame
     settings_frame = ttk.LabelFrame(parent, relief="flat", borderwidth=0)
-    settings_frame.pack(side="left", fill="y", padx=5, pady=5)
+    settings_frame.grid(row=0, column=0, sticky="ns", padx=5, pady=5)
 
     image_frame = ttk.Frame(parent, width=400, height=400, relief="solid")
-    image_frame.pack_propagate(False)  # prevent shrinking to fit content
-    image_frame.pack(side="left", padx=(10,5), pady=5)
+    image_frame.grid(row=0, column=1, sticky="n", padx=(10, 5), pady=5)
+    image_frame.grid_propagate(False)  # prevent shrinking to fit content
 
     img = get_settings_img(config)
     tk_img = ImageTk.PhotoImage(img.resize((400, 400), Image.LANCZOS))
 
     settings_img_label = ttk.Label(image_frame, image=tk_img)
     settings_img_label.image = tk_img
-    settings_img_label.pack(expand=True)
+    settings_img_label.grid(row=0, column=0, sticky="nsew")
+    image_frame.rowconfigure(0, weight=1)
+    image_frame.columnconfigure(0, weight=1)
 
+    row = 0
     for key, value in config.items():
         if key != "trigger_bot":
             field_text = key.replace("_", " ").title()
-            ttk.Label(settings_frame, text=field_text).pack(anchor="w", pady=(4, 0))
+            ttk.Label(settings_frame, text=field_text).grid(
+                row=row, column=0, sticky="w", pady=(4, 0)
+            )
 
-        if key == "aimbot_fov_percentage":
-            add_scale_control(settings_frame, title, key, value, tk.DoubleVar, 0.01, 1.0, 0.01)
+        if key in ("aimbot_fov", "dead_zone", "smoothness"):
+            def callback(_):
+                update_preview()
 
-        elif key == "dead_zone_radius":
-            add_scale_control(settings_frame, title, key, value, tk.IntVar, 1, 100, 1)
+            add_scale_control(settings_frame, row, title, key, value, tk.DoubleVar, 0.01, 1.0, 0.01, callback)
 
         elif key == "classes" and isinstance(value, (list, tuple)):
             btn_frame = ttk.Frame(settings_frame)
-            btn_frame.pack(anchor="w", pady=2)
+            btn_frame.grid(row=row, column=0, columnspan=2, sticky="w", pady=20)
 
             vars_list = []
             for i in range(4):
@@ -187,11 +196,16 @@ def build_config_frame(parent, title):
             bind_autosave(trig_var)
             create_tile_button(btn_frame, "Trigger Bot", trig_var, on_btn_click)
             variables[(title, "trigger_bot")] = trig_var
-
-            variables[(title, "trigger_bot")] = trig_var
+        
+        row += 1
 
     start_stop_frame = tk.Frame(settings_frame)
-    start_stop_frame.pack(expand=True, fill="both")
+    start_stop_frame.grid(
+        row=row, column=0, columnspan=2,
+        sticky="nsew",
+        pady=(0, 5)
+    )
+    settings_frame.rowconfigure(row, weight=1)  
 
     def toggle_start_stop():
         current_text = start_stop_btn["text"]
@@ -213,7 +227,6 @@ def build_config_frame(parent, title):
     start_stop_btn.pack(expand=True, anchor="center", ipadx=20, ipady=10, pady=(0, 5))
 
 
-
 def on_config_change(_, parent, title_var):
     new_title = title_var.get()
     for widget in parent.winfo_children():
@@ -229,40 +242,37 @@ def build_frame(parent):
     style.configure("Custom.TLabelframe.Label", font=("Arial", 11, "bold"))
 
     frame = ttk.LabelFrame(parent, text=title.upper(), style="Custom.TLabelframe", padding=10)
-    frame.pack(fill="x", padx=10, pady=5)
+    frame.grid(row=0, column=0, sticky="ew", padx=10, pady=5)
     frame.columnconfigure(0, weight=1)
 
     config_frame = ttk.LabelFrame(parent, text="", style="Custom.TLabelframe", padding=10)
-    config_frame.pack(fill="x", padx=5, pady=5)
+    config_frame.grid(row=1, column=0, sticky="ew", padx=5, pady=5)
+    config_frame.columnconfigure(0, weight=1)
 
     row = 0
     for key, value in settings.items():
         field_text = key.replace("_", " ").title()
+        ttk.Label(frame, text=field_text, font=setting_font).grid(row=row, column=0, sticky="w", pady=(5, 0))
 
-        if key in ("sensitivity", "aimbot_box_size_percentage", "confidence"):
+        if key == "sensitivity":
             var = tk.DoubleVar(value=value)
             bind_autosave(var)
             variables[(title, key)] = var
 
-            if key == "aimbot_box_size_percentage":
-                def on_box_size_change(*_):
-                    config_name = settings["current_config"]
-                    tmp_var = variables[(title, "aimbot_box_size_percentage")]
-                    settings["aimbot_box_size_percentage"] = tmp_var.get()
+            ttk.Entry(frame, textvariable=var, width=18, justify="right").grid(
+                row=row, column=1, sticky="e", pady=5
+            )
 
-                    img = get_settings_img(configs[config_name])
-                    tk_img = ImageTk.PhotoImage(img.resize((400, 400), Image.LANCZOS))
-                    settings_img_label.configure(image=tk_img)
-                    settings_img_label.image = tk_img
+        elif key == "aimbot_box_size_percentage":
+            def callback(_):
+                update_preview()
 
-                var.trace_add("write", on_box_size_change)
+            add_scale_control(frame, row, title, key, value, tk.DoubleVar, 0.01, 1.0, 0.01, callback)
 
-            ttk.Label(frame, text=field_text, font=setting_font).grid(row=row, column=0, sticky="w", pady=5, padx=(0, 20))
-            ttk.Entry(frame, textvariable=var, width=18, justify="right").grid(row=row, column=1, sticky="w", pady=5)
+        elif key == "confidence":
+            add_scale_control(frame, row, title, key, value, tk.DoubleVar, 0.6, 1.0, 0.01)
 
         elif key == "current_config":
-            ttk.Label(frame, text=field_text, font=setting_font).grid(row=row, column=0, sticky="w", pady=5, padx=(0, 20))
-
             choices = list(configs.keys())
             var = tk.StringVar(value=value if value in choices else choices[0])
             bind_autosave(var)
@@ -276,7 +286,7 @@ def build_frame(parent):
                 width=15,
                 justify="right"
             )
-            combo.grid(row=row, column=1, sticky="w", pady=2)
+            combo.grid(row=row, column=1, sticky="e", pady=2)
             combo.bind("<<ComboboxSelected>>", lambda e: on_config_change(e, config_frame, var))
 
             build_config_frame(config_frame, value)

@@ -1,6 +1,6 @@
 {
   "sensitivity": 0.325,
-  "aimbot_box_size_percentage": 0.4,
+  "aimbot_box_size_percentage": 0.71,
   "confidence": 0.75,
-  "current_config": "Closet"
+  "current_config": "Aggressive"
 }
